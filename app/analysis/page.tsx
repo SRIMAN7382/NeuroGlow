@@ -5,8 +5,16 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Upload, Camera, Loader2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Upload, Camera, Loader2, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+
+interface SkinCondition {
+  name: string;
+  probability: number;
+  description: string;
+}
 
 interface Recommendation {
   name: string;
@@ -21,6 +29,7 @@ interface AnalysisResult {
   prediction: string;
   probabilities: Record<string, number>;
   recommendations: Recommendation[];
+  conditions: SkinCondition[];
 }
 
 export default function AnalysisPage() {
@@ -28,24 +37,41 @@ export default function AnalysisPage() {
   const [image, setImage] = useState<string | null>(null);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
   const handleClickUpload = () => {
     fileInputRef.current?.click();
   };
 
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      setImage(URL.createObjectURL(file));
-      processImage(file);
+    if (!file) return;
+
+    // Reset states
+    setError(null);
+    setResult(null);
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      setError('Please upload an image file');
+      return;
     }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Image size should be less than 5MB');
+      return;
+    }
+
+    setImage(URL.createObjectURL(file));
+    processImage(file);
   };
 
   const processImage = async (file: File) => {
     setLoading(true);
     const formData = new FormData();
-    formData.append("file", file); // must match FastAPI param name
+    formData.append("file", file);
 
     try {
       const response = await fetch("https://neuro-glow-api.onrender.com/predict", {
@@ -61,12 +87,12 @@ export default function AnalysisPage() {
       setResult(data);
     } catch (error) {
       console.error("Error analyzing image:", error);
+      setError("Failed to analyze image. Please try again.");
       toast({
         title: "Error",
         description: "Failed to analyze image. Please try again.",
         variant: "destructive",
       });
-      setResult(null);
     } finally {
       setLoading(false);
     }
@@ -129,6 +155,14 @@ export default function AnalysisPage() {
               </Button>
             </div>
 
+            {error && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Error</AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+
             {image && (
               <Card className="w-full max-w-md overflow-hidden">
                 <CardContent className="p-0">
@@ -161,8 +195,8 @@ export default function AnalysisPage() {
                     <div className="space-y-4">
                       <div>
                         <p className="text-sm text-gray-500 dark:text-gray-400">Primary Condition</p>
-                        <p className="text-lg font-medium text-gray-900 dark:text-white">
-                          {result.prediction}
+                        <p className="text-lg font-medium text-gray-900 dark:text-white capitalize">
+                          {result.prediction.replace(/_/g, ' ')}
                         </p>
                       </div>
                       {Object.entries(result.probabilities).map(([condition, probability]) => (
@@ -189,7 +223,7 @@ export default function AnalysisPage() {
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       {result.recommendations.map((product, idx) => (
-                        <Card key={idx} className="overflow-hidden">
+                        <Card key={idx} className="overflow-hidden hover:shadow-lg transition-shadow">
                           <div className="relative h-40">
                             <Image
                               src={product.image}
@@ -206,23 +240,29 @@ export default function AnalysisPage() {
                               {product.description}
                             </p>
                             <div className="flex flex-wrap gap-2 mb-3">
-                              {product.benefits.map((b, i) => (
-                                <span
-                                  key={i}
-                                  className="bg-gray-200 dark:bg-gray-700 text-xs px-2 py-1 rounded"
-                                >
-                                  {b.trim()}
-                                </span>
+                              {product.benefits.map((benefit, i) => (
+                                <Badge key={i} variant="secondary">
+                                  {benefit.trim()}
+                                </Badge>
                               ))}
                             </div>
-                            <a
-                              href={product.profit_link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-600 dark:text-blue-400 text-sm underline"
-                            >
-                              Buy Now →
-                            </a>
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-gray-900 dark:text-white">
+                                ${parseFloat(product.price).toFixed(2)}
+                              </span>
+                              <Button
+                                asChild
+                                className="bg-pink-500 hover:bg-pink-600"
+                              >
+                                <a
+                                  href={product.profit_link}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  Buy Now
+                                </a>
+                              </Button>
+                            </div>
                           </CardContent>
                         </Card>
                       ))}

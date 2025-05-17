@@ -1,27 +1,38 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Upload, Camera, Loader2, Star, ShoppingCart } from "lucide-react";
-import { PRODUCT_DB } from "@/lib/constants/products";
-import { useStore } from "@/lib/store";
+import { Progress } from "@/components/ui/progress";
+import { Upload, Camera, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
+interface Recommendation {
+  name: string;
+  image: string;
+  description: string;
+  price: string;
+  benefits: string[];
+  profit_link: string;
+}
+
+interface AnalysisResult {
+  prediction: string;
+  probabilities: Record<string, number>;
+  recommendations: Recommendation[];
+}
+
 export default function AnalysisPage() {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [image, setImage] = useState<string | null>(null);
-  const [result, setResult] = useState<{
-    skinType: string;
-    acneLevel: string;
-    wrinkles: string;
-    spots: string;
-    darkCircles: string;
-  } | null>(null);
+  const [result, setResult] = useState<AnalysisResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const { addToCart } = useStore();
   const { toast } = useToast();
+
+  const handleClickUpload = () => {
+    fileInputRef.current?.click();
+  };
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -33,81 +44,32 @@ export default function AnalysisPage() {
 
   const processImage = async (file: File) => {
     setLoading(true);
-    
+    const formData = new FormData();
+    formData.append("file", file); // must match FastAPI param name
+
     try {
-      // Simulated API response for demo purposes
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      setResult({
-        skinType: "Combination",
-        acneLevel: "Mild",
-        wrinkles: "Minimal",
-        spots: "Moderate",
-        darkCircles: "Mild"
+      const response = await fetch("https://neuro-glow-api.onrender.com/predict", {
+        method: "POST",
+        body: formData,
       });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setResult(data);
     } catch (error) {
       console.error("Error analyzing image:", error);
       toast({
         title: "Error",
         description: "Failed to analyze image. Please try again.",
-        variant: "destructive"
+        variant: "destructive",
       });
+      setResult(null);
     } finally {
       setLoading(false);
     }
-  };
-
-  const getRecommendations = () => {
-    if (!result) return [];
-
-    const recommendedProducts = new Set();
-
-    // Add from skin type
-    if (result.skinType.toLowerCase() === "oily") {
-      recommendedProducts.add("Oil-Free Moisturizer");
-    }
-
-    if (result.acneLevel !== "None") {
-      PRODUCT_DB.acne.treatments.forEach((p) => recommendedProducts.add(JSON.stringify(p)));
-    }
-    if (result.wrinkles !== "None") {
-      PRODUCT_DB.wrinkles.treatments.forEach((p) => recommendedProducts.add(JSON.stringify(p)));
-    }
-    if (result.spots !== "None") {
-      PRODUCT_DB["dark spots"].treatments.forEach((p) => recommendedProducts.add(JSON.stringify(p)));
-    }
-    if (result.darkCircles !== "None") {
-      PRODUCT_DB["dark circles"].treatments.forEach((p) => recommendedProducts.add(JSON.stringify(p)));
-    }
-
-    return Array.from(recommendedProducts).map((p) => {
-      try {
-        return JSON.parse(p);
-      } catch {
-        return { name: p };
-      }
-    });
-  };
-
-  const handleAddToCart = (product: any) => {
-    addToCart({
-      id: product.name,
-      name: product.name,
-      brand: "Recommended",
-      price: product.price.toString(),
-      price_sign: "$",
-      currency: "USD",
-      image_link: product.image,
-      description: product.description,
-      rating: 5,
-      category: "Skincare",
-      product_type: "treatment",
-      tag_list: product.benefits || []
-    });
-    
-    toast({
-      title: "Added to Cart",
-      description: `${product.name} has been added to your cart.`
-    });
   };
 
   return (
@@ -131,7 +93,7 @@ export default function AnalysisPage() {
               AI Skin Analysis
             </h1>
             <p className="text-lg text-gray-200 mb-8">
-              Get a personalized skincare routine based on your unique skin profile using our advanced AI technology.
+              Get personalized skincare recommendations based on advanced AI analysis of your skin.
             </p>
           </div>
         </div>
@@ -152,18 +114,17 @@ export default function AnalysisPage() {
           <div className="flex flex-col items-center gap-8">
             <div className="flex gap-4">
               <input
+                ref={fileInputRef}
                 type="file"
                 accept="image/*"
+                capture="environment"
                 className="hidden"
-                id="image-upload"
                 onChange={handleImageUpload}
               />
-              <label htmlFor="image-upload">
-                <Button className="flex items-center gap-2">
-                  <Upload className="w-5 h-5" /> Upload Photo
-                </Button>
-              </label>
-              <Button variant="outline" className="flex items-center gap-2">
+              <Button onClick={handleClickUpload} className="flex items-center gap-2">
+                <Upload className="w-5 h-5" /> Upload Photo
+              </Button>
+              <Button onClick={handleClickUpload} variant="outline" className="flex items-center gap-2">
                 <Camera className="w-5 h-5" /> Take Photo
               </Button>
             </div>
@@ -191,87 +152,84 @@ export default function AnalysisPage() {
             )}
 
             {result && (
-              <Card className="w-full max-w-md">
-                <CardContent className="p-6">
-                  <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
-                    Analysis Results
-                  </h3>
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Skin Type</p>
-                      <p className="text-lg font-medium text-gray-900 dark:text-white">{result.skinType}</p>
+              <>
+                <Card className="w-full max-w-md">
+                  <CardContent className="p-6">
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+                      Analysis Results
+                    </h3>
+                    <div className="space-y-4">
+                      <div>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">Primary Condition</p>
+                        <p className="text-lg font-medium text-gray-900 dark:text-white">
+                          {result.prediction}
+                        </p>
+                      </div>
+                      {Object.entries(result.probabilities).map(([condition, probability]) => (
+                        <div key={condition} className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <p className="text-sm font-medium text-gray-700 dark:text-gray-300 capitalize">
+                              {condition.replace(/_/g, ' ')}
+                            </p>
+                            <span className="text-sm font-medium text-gray-900 dark:text-white">
+                              {Math.round(probability * 100)}%
+                            </span>
+                          </div>
+                          <Progress value={probability * 100} className="h-2" />
+                        </div>
+                      ))}
                     </div>
-                    <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Acne Level</p>
-                      <p className="text-lg font-medium text-gray-900 dark:text-white">{result.acneLevel}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Wrinkles</p>
-                      <p className="text-lg font-medium text-gray-900 dark:text-white">{result.wrinkles}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Dark Spots</p>
-                      <p className="text-lg font-medium text-gray-900 dark:text-white">{result.spots}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Dark Circles</p>
-                      <p className="text-lg font-medium text-gray-900 dark:text-white">{result.darkCircles}</p>
+                  </CardContent>
+                </Card>
+
+                {result.recommendations.length > 0 && (
+                  <div className="w-full mt-8">
+                    <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+                      Recommended Products
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {result.recommendations.map((product, idx) => (
+                        <Card key={idx} className="overflow-hidden">
+                          <div className="relative h-40">
+                            <Image
+                              src={product.image}
+                              alt={product.name}
+                              fill
+                              className="object-contain p-4 bg-white"
+                            />
+                          </div>
+                          <CardContent className="p-4">
+                            <h4 className="font-semibold text-gray-900 dark:text-white mb-2">
+                              {product.name}
+                            </h4>
+                            <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
+                              {product.description}
+                            </p>
+                            <div className="flex flex-wrap gap-2 mb-3">
+                              {product.benefits.map((b, i) => (
+                                <span
+                                  key={i}
+                                  className="bg-gray-200 dark:bg-gray-700 text-xs px-2 py-1 rounded"
+                                >
+                                  {b.trim()}
+                                </span>
+                              ))}
+                            </div>
+                            <a
+                              href={product.profit_link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 dark:text-blue-400 text-sm underline"
+                            >
+                              Buy Now →
+                            </a>
+                          </CardContent>
+                        </Card>
+                      ))}
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {result && (
-              <div className="w-full max-w-4xl mt-12">
-                <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-                  Recommended Products
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {getRecommendations().map((product, index) => (
-                    <Card key={index} className="overflow-hidden">
-                      {product.image && (
-                        <div className="relative h-40">
-                          <Image
-                            src={product.image}
-                            alt={product.name}
-                            fill
-                            className="object-contain p-4 bg-white"
-                          />
-                        </div>
-                      )}
-                      <CardContent className="p-4">
-                        <h4 className="font-semibold text-gray-900 dark:text-white mb-2">
-                          {product.name}
-                        </h4>
-                        <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
-                          {product.description}
-                        </p>
-                        <div className="flex flex-wrap gap-2 mb-3">
-                          {product.benefits?.map((benefit: string, i: number) => (
-                            <Badge key={i} variant="secondary" className="text-xs">
-                              {benefit}
-                            </Badge>
-                          ))}
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-lg font-bold text-gray-900 dark:text-white">
-                            ${product.price}
-                          </span>
-                          <Button
-                            size="sm"
-                            onClick={() => handleAddToCart(product)}
-                            className="bg-pink-500 hover:bg-pink-600"
-                          >
-                            <ShoppingCart className="h-4 w-4 mr-2" />
-                            Add to Cart
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </div>
+                )}
+              </>
             )}
           </div>
         </div>
